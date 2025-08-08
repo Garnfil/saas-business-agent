@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "avian-cable-456907-n4",
+  "private_key_id": "09a10a17fdf4913268e08613bf04d723629f2159",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCuvy8067czQQcR\nVY6XnZnPH7LXR/GjR+zMkGugI3q+UvNqhgpp7iHjlKhHdmb9+IySL7gSZEAygXhk\nNZQhcDlo/ymowrBnD8VqwkwCAKxqn590e9FrJ95wqu/cKiQV92eSdKOLb7/mB5nG\nmjgRR39R8wI8ya9x3J97pEQ1zYZOqduchk4W72fLtuxeLBJ2/JADy3es4pMrM1ad\nc20VOj5EdoDl/Gm50f6/xR67vavn0oHxgn0IQEF0A/+oKFo4TuAHKn4A8F1Q/St/\nvSlJsbJAIBLHZvKiqD/TYba/yW6V0iO8RWKsMWCiv08aet1+ZvmUvupHHctZPQr0\n/EluRDUZAgMBAAECggEACyMyTgwr+/9MBQXP9cfcsr/RdTknpIGEDTGzOlyoiRLe\nYs6yQTglPs0NwKhCPjOmOfcCo2FyWgW4d6KWk18EubVxoUjvV1JBAeHqWEJUuuL7\nlcACg/LhkYrDiOPCswe2uTXn6o4vy+h2G5tesXM+ISn83YT5QqeOHqJEmq1DvyWn\nPzNTtmgAMGorY1/A4ZmC8K4QNMbdM0P/5OsZDDpUp1NIgOHzqd3RFS1fWbUblgaP\njoRC6A2NyA1bUmSgZITUPhRXNGQRr627Jcy/g4GuYtooxp16yiD4tkOJscB1Cnpz\nVl8DuNKb6pqTqP0DtR6bxmi7EW196JP62t/yVxUpgQKBgQDn7qB8RQ7IxhEXXdjl\nJ0uQIB2NGo5ZiKgBz3mDUySrYiPi1Cd7Xf8rjpS0RJxqWU9cwk2c7h3h7Dqz+ZBb\nWGHHAHr3IqKSJcUrwMVDM1NhdwhepmX2UV+TmICbcsX+ojDn0Q6vWJaDj+woMM6M\nhjVjyApjKsAKpTwRTfZ4A+KdKQKBgQDA4WfgyltIhOvGEzFkQ9a4SxJvg9xY4kWD\nsegkRKpzGMAWnO15Xvsn1MzaEN+ZQGwgZjFq1sAjfgh17L4w8Cdls/jutOrubMV2\nXfSxTYQDpwtYo8bcGqEusp7rDKbYBc1fal1eFb67qJUcxAA8+z0dH1oJlVB+ck9W\nBbmQBPrmcQKBgE/GZnEYF8O7TPmqkAYSBA2o3kFAlyH4vUESKguft4czlIBa1NG8\nPR6wRjnTN7Hk0kVnl+aYiLLC3FY3Sw4AUnFumt0SjrSSRUWNYsyAhPeLR9e2iG+3\nAZb055eQXMX+56902wY5BFxwTpxsXT88knSlw9zkQXXn68dP96zEOVgxAoGBAIaa\nBqsJrHBMSlk9NZ+589NCmIf35kKlDUvdUJpWzPhrUkm1k8e6b90ZFSgs1E2Xdp2Z\nk2zylr1uC6t33jY6sdO4p8S1vqlKgPaclNFSvgjqfvGJwZICh28WOe7gMmLYkby/\ndo7c7/D3sa+UXHIyBjEXmvbLG5RSY2ktr5SA1TMRAoGADrceAl4FHsv1/6Mna28Q\nVqo4mULZ8d0Bk+xO2cMTikqn/8eP1hrOsyctFd2k9IK/MqjFZYvrCo8IqXpcEW6+\nI8oUVvyVogneyOZRp/gsIY2Y9MDOJ7IBfRInv4Uz51YEyY0uVEbjgQVUl01JwFDE\n+pIpy4LhOoCeif9ekBFNMHU=\n-----END PRIVATE KEY-----\n",
+  "client_email": "ai-business@avian-cable-456907-n4.iam.gserviceaccount.com",
+  "client_id": "101988566378921131516",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/ai-business%40avian-cable-456907-n4.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}

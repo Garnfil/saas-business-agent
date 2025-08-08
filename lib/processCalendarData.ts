@@ -1,7 +1,7 @@
 import {tool} from "@openai/agents";
 import {google} from "googleapis";
 import {z} from "zod";
-import creds from "../config/avian-cable-456907-n4-9fbf5727fbcc.json";
+import creds from "../config/avian-cable-456907-n4-09a10a17fdf4.json";
 import {JWT} from "google-auth-library";
 
 const calendar = google.calendar("v3");
