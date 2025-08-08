@@ -24,6 +24,7 @@ import {runAgent} from "@/lib/actions/runAgent";
 import Image from "next/image";
 import MarkdownRenderer from "@/components/markdown-renderer";
 import {Textarea} from "@/components/ui/textarea";
+import {VoiceSelect} from "@/components/voice-select";
 
 type Message = {
     id: string;
@@ -45,7 +46,9 @@ export default function VoiceAssistantPage() {
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
     const [recording, setRecording] = useState(false);
+    const [voice, setVoice] = useState("shimmer");
     const [showInputForm, setShowInputForm] = useState(true);
+
     const [showRecordingButtons, setShowRecordingButtons] =
         useState(false);
 
@@ -236,7 +239,7 @@ export default function VoiceAssistantPage() {
         const res = await fetch("/api/synthesize", {
             method: "POST",
             headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({text}),
+            body: JSON.stringify({text, voice}), // Add voice to the request
         });
 
         const blob = await res.blob();
@@ -569,6 +572,10 @@ export default function VoiceAssistantPage() {
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
+                            <VoiceSelect
+                                onVoiceChange={setVoice}
+                                defaultVoice="shimmer"
+                            />
                             <div className="flex items-center justify-between">
                                 <Label className="text-sm">
                                     Voice Responses

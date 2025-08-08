@@ -5,7 +5,7 @@ const openai = new OpenAI({apiKey: process.env.OPENAI_API_KEY!});
 
 export async function POST(req: Request) {
     try {
-        const {text} = await req.json();
+        const {text, voice} = await req.json();
 
         if (!text || typeof text !== "string" || text.trim() === "") {
             return NextResponse.json(
@@ -14,9 +14,31 @@ export async function POST(req: Request) {
             );
         }
 
+        if (
+            !voice ||
+            typeof voice !== "string" ||
+            ![
+                "alloy",
+                "ash",
+                "ballad",
+                "coral",
+                "echo",
+                "fable",
+                "nova",
+                "onyx",
+                "sage",
+                "shimmer",
+            ].includes(voice)
+        ) {
+            return NextResponse.json(
+                {error: "Invalid voice selection"},
+                {status: 400}
+            );
+        }
+
         const speech = await openai.audio.speech.create({
-            model: "tts-1", // or tts-1-hd for higher quality
-            voice: "ash", // other voices: "echo", "onyx", "shimmer"
+            model: "tts-1",
+            voice: voice as any, // Type assertion to satisfy OpenAI's type checking
             input: text,
             instructions: "Speak in a cheerful and positive tone.",
             response_format: "mp3",
