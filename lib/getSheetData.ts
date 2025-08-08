@@ -80,7 +80,9 @@ const fetchSheetData = async ({
         if (now - cached.timestamp < CACHE_TTL) return cached.data;
     }
 
-    const doc = new GoogleSpreadsheet(spreadsheetId, auth);
+    const doc = new GoogleSpreadsheet(spreadsheetId, {
+        apiKey: process.env.GOOGLE_API_KEY ?? "",
+    });
     await doc.loadInfo();
 
     const sheet =
