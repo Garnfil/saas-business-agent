@@ -165,6 +165,7 @@ export default function VoiceAssistantPage() {
             setMessages((prev) => [...prev, errorMessage]);
         } finally {
             setIsLoading(false);
+            setInput("");
         }
     };
 
@@ -383,7 +384,7 @@ export default function VoiceAssistantPage() {
                                                                                 return (
                                                                                     <div
                                                                                         key={`${message.id}-${i}`}
-                                                                                        className="whitespace-pre-wrap"
+                                                                                        className="whitespace-wrap"
                                                                                     >
                                                                                         <MarkdownRenderer>
                                                                                             {

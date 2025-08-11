@@ -40,7 +40,7 @@ export default function MarkdownRenderer({
                     <ul
                         style={{
                             paddingLeft: "1.5em",
-                            margin: "2em 0",
+                            margin: "1em 0",
                             listStyleType: "disc",
                         }}
                         {...props}
@@ -57,7 +57,7 @@ export default function MarkdownRenderer({
                     />
                 ),
                 li: ({node, ...props}) => (
-                    <li style={{marginBottom: "1em"}} {...props} />
+                    <li style={{marginBottom: ".5em"}} {...props} />
                 ),
 
                 // Headings
