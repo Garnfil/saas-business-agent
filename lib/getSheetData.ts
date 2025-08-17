@@ -35,6 +35,7 @@ export const getBusinessData = tool({
             .number()
             .nullable()
             .optional()
+            .default(100)
             .describe("Max number of rows to return."),
     }),
     async execute({business_sector_type, maxRows}) {

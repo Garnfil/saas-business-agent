@@ -66,7 +66,7 @@ export default function ChatBox({ messages, isLoading, isSpeaking, stopSpeaking 
                   <div
                     className={`flex-shrink-0 w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center ${message.role ===
                       "user"
-                      ? "bg-violet-600 text-white shadow-lg shadow-violet-500/25"
+                      ? "bg-[#071A3D] text-white shadow-lg shadow-violet-500/25"
                       : "bg-slate-700 text-violet-300 border border-violet-500/30"
                       }`}
                   >
@@ -88,7 +88,7 @@ export default function ChatBox({ messages, isLoading, isSpeaking, stopSpeaking 
                     <div
                       className={`inline-block p-2 md:p-4 rounded-2xl text-sm md:text-base ${message.role ===
                         "user"
-                        ? "bg-violet-600 text-white rounded-br-md shadow-lg shadow-violet-900/25"
+                        ? "bg-[#071A3D] text-white rounded-br-md shadow-lg shadow-violet-900/25"
                         : "bg-slate-700/50 text-slate-100 rounded-bl-md border border-violet-500/20"
                         }`}
                     >
