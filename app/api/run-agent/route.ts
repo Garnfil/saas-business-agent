@@ -1,6 +1,12 @@
-// app/api/agent/stream/route.ts
 import {NextRequest} from "next/server";
-import {Agent, run, AgentInputItem, RunContext} from "@openai/agents";
+import {
+    Agent,
+    run,
+    AgentInputItem,
+    RunContext,
+    hostedMcpTool,
+    MCPServerStreamableHttp,
+} from "@openai/agents";
 import {getBusinessData} from "@/lib/getSheetData";
 import {
     addCalendarEvent,
@@ -9,8 +15,22 @@ import {
 import {getCurrentDateTime} from "@/lib/dateInformation";
 import {exportToPDF} from "@/lib/exportToPDF";
 import {manageSheetData} from "@/lib/manageSheetData";
+import {text} from "stream/consumers";
+import {encodingForModel} from "js-tiktoken"; // ✅ tiktoken import
 
 let thread: AgentInputItem[] = [];
+
+type RunResult = {
+    id: string;
+    status: string;
+    output?: any;
+    usage?: {
+        promptTokens: number;
+        completionTokens: number;
+        totalTokens: number;
+    };
+    // ...
+};
 
 const context =
     new RunContext(`You are Sam, an AI Business Agent. Your primary function is to act as a trusted business advisor for a user. You have real-time access to a user's business data and can perform actions based on this information.
@@ -41,12 +61,16 @@ const context =
     Synthesize: Combine the data from both tool calls into a clear, concise response.
     Proactive Recommendation: Based on the unpaid invoices, suggest a next step, like drafting a follow-up email.`);
 
+const googleSheetsMCP = new MCPServerStreamableHttp({
+    url: "https://google-sheet-mcp.vercel.app/mcp",
+    name: "sheets-mcp-server",
+});
+
 const agent = new Agent({
     name: "Assistant",
     instructions: (runContext, agent) => context.context,
+    mcpServers: [googleSheetsMCP],
     tools: [
-        getBusinessData,
-        manageSheetData,
         addCalendarEvent,
         getCalendarEvents,
         getCurrentDateTime,
@@ -66,6 +90,8 @@ export async function POST(req: NextRequest) {
     const stream = new ReadableStream({
         async start(controller) {
             try {
+                await googleSheetsMCP.connect();
+
                 let agentStream = await run(agent, thread, {
                     stream: true,
                 });
@@ -99,6 +125,8 @@ export async function POST(req: NextRequest) {
                 controller.close();
             } catch (err) {
                 controller.error(err);
+            } finally {
+                googleSheetsMCP.close();
             }
         },
     });

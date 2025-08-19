@@ -26,6 +26,10 @@ type Message = {
   id: string;
   role: "user" | "bot";
   parts: { type: "text"; text: string }[];
+  usage?: {
+    tokens?: number;
+    amount?: number;
+  }
 };
 
 export default function ChatPage() {
@@ -52,7 +56,6 @@ export default function ChatPage() {
 
   const [currentAudio, setCurrentAudio] =
     useState<HTMLAudioElement | null>(null);
-  const [currentTranscript, setCurrentTranscript] = useState("");
   const recognitionRef = useRef<any>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const { toast } = useToast();
@@ -92,10 +95,10 @@ export default function ChatPage() {
     setInput("");
     setIsLoading(true);
 
-    handleRunAgent(input);
+    handleRunAgent(input, userMessage.id);
   };
 
-  const handleRunAgent = async (input: string) => {
+  const handleRunAgent = async (input: string, messageId?: string) => {
     try {
       const response = await fetch("/api/run-agent", {
         method: "POST",
@@ -126,6 +129,20 @@ export default function ChatPage() {
         }
 
         accumulatedText += chunk;
+
+        // ✅ Detect usage payload
+        if (accumulatedText.includes("[USAGE]")) {
+          // Split text into main response + usage
+          const [responsePart, usagePart] = accumulatedText.split("[USAGE]");
+
+          try {
+            accumulatedText = responsePart.trim();
+            const json = JSON.parse(usagePart.trim());
+            console.log("Usage data:", json);
+          } catch (e) {
+            console.error("Failed to parse usage JSON:", e);
+          }
+        }
 
         setMessages((prev) => {
           const updated = [...prev];
