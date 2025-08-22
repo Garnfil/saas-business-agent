@@ -21,6 +21,8 @@ import Image from "next/image";
 import { Textarea } from "@/components/ui/textarea";
 import { VoiceSelect } from "@/components/voice-select";
 import ChatBox from "../../../components/chat-box";
+import ResponseStyleDialog from "@/components/response-style-dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type Message = {
   id: string;
@@ -48,6 +50,7 @@ export default function ChatPage() {
   const [recording, setRecording] = useState(false);
   const [voice, setVoice] = useState("shimmer");
   const [showInputForm, setShowInputForm] = useState(true);
+  const [selectedResponseStyle, setSelectedResponseStyle] = useState("")
 
   const [showRecordingButtons, setShowRecordingButtons] =
     useState(false);
@@ -64,6 +67,8 @@ export default function ChatPage() {
     if (bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: "smooth" });
     }
+    const responseStyle = sessionStorage.getItem("responseStyle") ?? "";
+    setSelectedResponseStyle(responseStyle);
   }, [messages]);
 
   const createMessage = (
@@ -103,7 +108,7 @@ export default function ChatPage() {
       const response = await fetch("/api/run-agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input }),
+        body: JSON.stringify({ input, responseStyle: selectedResponseStyle }),
       });
 
 
@@ -314,8 +319,14 @@ export default function ChatPage() {
     setShowRecordingButtons(true);
   };
 
+  const handleResponseStyleChanged = (value: string) => {
+    setSelectedResponseStyle(value)
+    sessionStorage.setItem("responseStyle", value);
+  }
+
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+      <ResponseStyleDialog session={false} />
       <DashboardHeader title="Chat" />
 
       <div className="grid gap-4 md:grid-cols-4">
@@ -444,7 +455,7 @@ export default function ChatPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Icons.settings className="w-5 h-5" />
-                Voice Settings
+                Response Settings
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -471,23 +482,22 @@ export default function ChatPage() {
                   {voiceEnabled ? "On" : "Off"}
                 </Button>
               </div>
-              <div className="space-y-2">
-                <Label className="text-sm">
-                  Speech Speed
-                </Label>
-                <Slider
-                  value={voiceSpeed}
-                  onValueChange={setVoiceSpeed}
-                  max={2}
-                  min={0.5}
-                  step={0.1}
-                  className="w-full"
-                />
-                <div className="flex justify-between text-xs text-slate-500">
-                  <span>Slow</span>
-                  <span>Normal</span>
-                  <span>Fast</span>
+              <div className="my-2">
+                <Label >Response Style</Label>
+                <div className="mt-2">
+                  <Select value={selectedResponseStyle}
+                    onValueChange={handleResponseStyleChanged}>
+                    <SelectTrigger >
+                      <SelectValue placeholder="Prefered Response Style" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Direct & Concise">Direct & Concise</SelectItem>
+                      <SelectItem value="Action-Oriented">Action Oriented</SelectItem>
+                      <SelectItem value="Comprehensive & Detailed">Detailed & Comprehensive</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
+
               </div>
             </CardContent>
           </Card>
