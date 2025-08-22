@@ -106,6 +106,7 @@ export default function ChatPage() {
         body: JSON.stringify({ input }),
       });
 
+
       if (!response.body)
         throw new Error("Stream not supported");
 
@@ -114,12 +115,16 @@ export default function ChatPage() {
 
       let accumulatedText = "";
       let botMessageAdded = false;
+      const botMessageId = `bot-${Date.now()}`;
+
+      console.log("ID: ", botMessageId);
 
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
 
         const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n\n").filter(line => line.trim() !== "");
 
         if (chunk.includes("[INTERRUPTION]")) {
           console.log(
@@ -128,21 +133,41 @@ export default function ChatPage() {
           break; // Or handle interruption approval flow
         }
 
-        accumulatedText += chunk;
+        console.log(lines);
 
-        // ✅ Detect usage payload
-        if (accumulatedText.includes("[USAGE]")) {
-          // Split text into main response + usage
-          const [responsePart, usagePart] = accumulatedText.split("[USAGE]");
-
-          try {
-            accumulatedText = responsePart.trim();
-            const json = JSON.parse(usagePart.trim());
-            console.log("Usage data:", json);
-          } catch (e) {
-            console.error("Failed to parse usage JSON:", e);
+        for (const line of lines) {
+          if (line.startsWith("data:")) {
+            try {
+              const data = JSON.parse(line.substring(5));
+              if (data.type === "thought") {
+                // Update the existing "thinking" message with the new thought
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === botMessageId
+                      ? { ...msg, parts: [{ type: "text", text: data.message }] }
+                      : msg
+                  )
+                );
+              } else if (data.type === "final") {
+                // Update the existing "thinking" message with the final output
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === botMessageId
+                      ? { ...msg, parts: [{ type: "text", text: data.message }] }
+                      : msg
+                  )
+                );
+                // Stop reading the stream, as we have the final message
+                reader.cancel();
+                return;
+              }
+            } catch (e) {
+              console.error("Failed to parse JSON:", e);
+            }
           }
         }
+
+        accumulatedText += chunk;
 
         setMessages((prev) => {
           const updated = [...prev];
@@ -171,6 +196,7 @@ export default function ChatPage() {
         });
       }
     } catch (error) {
+      console.log(error);
       const errorMessage = createMessage(
         "bot",
         "Sorry, something went wrong."
@@ -217,7 +243,6 @@ export default function ChatPage() {
       const transcription = await transcriptionRes.json();
       if (transcription.text) {
         setInput(transcription.text);
-        console.log(transcription.text);
 
         setMessages((prev) => [
           ...prev,

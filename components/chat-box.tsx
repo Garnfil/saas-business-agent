@@ -24,6 +24,7 @@ interface ChatBoxProps {
 export default function ChatBox({ messages, isLoading, isSpeaking, stopSpeaking }: ChatBoxProps) {
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
+
   return (
     <ScrollArea className="flex-1 min-h-0">
       <div className="p-2 md:p-6">
@@ -108,7 +109,7 @@ export default function ChatBox({ messages, isLoading, isSpeaking, stopSpeaking 
                                 >
                                   <MarkdownRenderer>
                                     {
-                                      part.text
+                                      part.text.replace(/\)\s*"\s*$/, ")")
                                     }
                                   </MarkdownRenderer>
                                   {/* 👇 Add Stop Audio button here */}

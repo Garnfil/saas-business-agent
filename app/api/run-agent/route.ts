@@ -1,101 +1,72 @@
+// api/run-agent/route.ts
+
 import {NextRequest} from "next/server";
 import {
     Agent,
     run,
     AgentInputItem,
     RunContext,
-    hostedMcpTool,
-    MCPServerStreamableHttp,
+    RunItem,
 } from "@openai/agents";
-import {getBusinessData} from "@/lib/getSheetData";
 import {
     addCalendarEvent,
     getCalendarEvents,
 } from "@/lib/processCalendarData";
 import {getCurrentDateTime} from "@/lib/dateInformation";
-import {exportToPDF} from "@/lib/exportToPDF";
-import {manageSheetData} from "@/lib/manageSheetData";
-import {text} from "stream/consumers";
-import {encodingForModel} from "js-tiktoken"; // ✅ tiktoken import
+import {googleSheetsMCP} from "@/lib/mcp-servers/servers";
+import {
+    generateDynamicInstructions,
+    responseStyles,
+} from "@/lib/utils";
+import {
+    MESSAGE_OUTPUT_ITEM,
+    TOOL_CALL_ITEM,
+    TOOL_CALL_OUTPUT_ITEM,
+} from "@/lib/constant/event-item-type";
 
 let thread: AgentInputItem[] = [];
 
-type RunResult = {
-    id: string;
-    status: string;
-    output?: any;
-    usage?: {
-        promptTokens: number;
-        completionTokens: number;
-        totalTokens: number;
-    };
-    // ...
-};
-
-const context =
-    new RunContext(`You are Sam, an AI Business Agent. Your primary function is to act as a trusted business advisor for a user. You have real-time access to a user's business data and can perform actions based on this information.
-
-    Your Core Capabilities:
-
-    Data Analysis & Insight: Instantly process user data to provide real-time insights.
-    Proactive Recommendations: Analyze trends, patterns, and performance to suggest actionable next steps (e.g., reminding a client, drafting a report, advising on pricing).
-    Direct Query Response: Accurately and instantly answer specific business questions using real-time data from connected platforms.
-
-    Constraints & Guidelines:
-
-    No Hallucinations: All outputs must be based on real data and logical business principles. Never guess or provide information you can't verify.
-    Action-Oriented: Your responses should not just be passive information dumps. They should lead to a clear, actionable outcome for the user.
-    User-Focused: Maintain a professional but conversational tone, similar to a knowledgeable and helpful team member or consultant.
-    Source of Truth: If asked a question, state that you are using real-time data from connected platforms to provide your response.
-
-    Task: Analyze the user's request and provide a response that fulfills the core capabilities while adhering to all constraints. If an action is required, use your integrated tools to perform it.
-
-    Example Conversation Flow:
-
-    User: "Show me the total sales from the last quarter and tell me which client has the most unpaid invoices."
-
-    Your thought process:
-
-    Identify Intent: The user wants two pieces of information: total sales for the last quarter and the client with the most unpaid invoices.
-    Tool Call: Call the get_sales_data(period='last_quarter') tool. Call the get_unpaid_invoices() tool and identify the client with the highest count.
-    Synthesize: Combine the data from both tool calls into a clear, concise response.
-    Proactive Recommendation: Based on the unpaid invoices, suggest a next step, like drafting a follow-up email.`);
-
-const googleSheetsMCP = new MCPServerStreamableHttp({
-    url: "https://google-sheet-mcp.vercel.app/mcp",
-    name: "sheets-mcp-server",
-});
-
-const agent = new Agent({
-    name: "Assistant",
-    instructions: (runContext, agent) => context.context,
-    mcpServers: [googleSheetsMCP],
-    tools: [
-        addCalendarEvent,
-        getCalendarEvents,
-        getCurrentDateTime,
-        exportToPDF,
-    ],
-    modelSettings: {toolChoice: "auto"},
-});
-
 export async function POST(req: NextRequest) {
-    const {input} = await req.json();
+    const {input, responseStyle} = await req.json();
     if (!input) return new Response("Missing input", {status: 400});
+
+    const selectedStyleInstructions =
+        responseStyles[
+            responseStyle as keyof typeof responseStyles
+        ] || responseStyles["Direct & Concise"]; // Default to Action-Oriented
+
+    // Combine core instructions with the selected style instructions
+    const dynamicInstructions = generateDynamicInstructions(
+        selectedStyleInstructions
+    );
+
+    const dynamicContext = new RunContext(dynamicInstructions);
+
+    const agent = new Agent({
+        name: "Assistant",
+        instructions: () => dynamicContext.context,
+        mcpServers: [googleSheetsMCP],
+        tools: [
+            addCalendarEvent,
+            getCalendarEvents,
+            getCurrentDateTime,
+        ],
+        modelSettings: {toolChoice: "auto"},
+    });
 
     thread.push({role: "user", content: input});
 
+    await googleSheetsMCP.connect();
+
     const encoder = new TextEncoder();
+
+    let agentStream = await run(agent, thread, {
+        stream: true,
+    });
 
     const stream = new ReadableStream({
         async start(controller) {
             try {
-                await googleSheetsMCP.connect();
-
-                let agentStream = await run(agent, thread, {
-                    stream: true,
-                });
-
                 while (true) {
                     // Stream incremental text to client
                     const textStream = agentStream.toTextStream({
@@ -140,3 +111,46 @@ export async function POST(req: NextRequest) {
         },
     });
 }
+
+// for await (const event of agentStream) {
+//                 if (event.type === "run_item_stream_event") {
+//                     const item: RunItem = event.item;
+//                     let messagePayload = null;
+
+//                     if (item.type === TOOL_CALL_ITEM) {
+//                         messagePayload = {
+//                             type: "thought",
+//                             message: "Calling a Tool...",
+//                         };
+//                     } else if (item.type === TOOL_CALL_OUTPUT_ITEM) {
+//                         messagePayload = {
+//                             type: "thought",
+//                             message:
+//                                 "Retrieving Result from the Tool...",
+//                         };
+//                     } else if (item.type === MESSAGE_OUTPUT_ITEM) {
+//                         const contentItem = item.rawItem.content[0];
+//                         let outputText = "";
+//                         if (contentItem?.type === "output_text") {
+//                             outputText = contentItem.text;
+//                             console.log("Output Text: ", outputText);
+//                         } else if (contentItem?.type === "refusal") {
+//                             outputText = contentItem.refusal;
+//                         }
+//                         messagePayload = {
+//                             type: "final",
+//                             message: outputText,
+//                         };
+//                     }
+
+//                     if (messagePayload) {
+//                         controller.enqueue(
+//                             encoder.encode(
+//                                 `data: ${JSON.stringify(
+//                                     messagePayload
+//                                 )}\n\n`
+//                             )
+//                         );
+//                     }
+//                 }
+//             }
