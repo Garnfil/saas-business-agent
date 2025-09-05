@@ -27,6 +27,7 @@ export const getBusinessData = tool({
                 "tasks",
                 "projects",
                 "employees",
+                "users",
             ])
             .describe(
                 "Business sectors to filter the data (e.g invoices, clients, marketing, sales, employees, projects, tasks)."
@@ -56,7 +57,7 @@ export const getBusinessData = tool({
 const auth = new JWT({
     email: creds.client_email,
     key: creds.private_key.replace(/\\n/g, "\n"),
-    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
 });
 
 type FetchOptions = {

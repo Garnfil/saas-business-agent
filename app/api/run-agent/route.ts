@@ -1,33 +1,33 @@
 // api/run-agent/route.ts
 
 import {NextRequest} from "next/server";
-import {
-    Agent,
-    run,
-    AgentInputItem,
-    RunContext,
-    RunItem,
-} from "@openai/agents";
+
+import {Agent, run, AgentInputItem} from "@openai/agents";
 import {
     addCalendarEvent,
     getCalendarEvents,
 } from "@/lib/processCalendarData";
 import {getCurrentDateTime} from "@/lib/dateInformation";
 import {googleSheetsMCP} from "@/lib/mcp-servers/servers";
+import {getContext} from "@/lib/agents/tools/getContext";
+import {getEncryptedToken} from "@/lib/agents/tools/getEncryptedToken";
+
+import {cookies} from "next/headers";
 import {
     generateDynamicInstructions,
     responseStyles,
-} from "@/lib/utils";
-import {
-    MESSAGE_OUTPUT_ITEM,
-    TOOL_CALL_ITEM,
-    TOOL_CALL_OUTPUT_ITEM,
-} from "@/lib/constant/event-item-type";
+} from "../../../lib/utils";
 
 let thread: AgentInputItem[] = [];
 
+interface UserGoogleAuth {
+    accessToken: string | null;
+    refreshToken: string | null;
+}
+
 export async function POST(req: NextRequest) {
-    const {input, responseStyle} = await req.json();
+    const {input, responseStyle, userGoogleAuth, userTenantId} =
+        await req.json();
     if (!input) return new Response("Missing input", {status: 400});
 
     const selectedStyleInstructions =
@@ -40,16 +40,18 @@ export async function POST(req: NextRequest) {
         selectedStyleInstructions
     );
 
-    const dynamicContext = new RunContext(dynamicInstructions);
-
     const agent = new Agent({
         name: "Assistant",
-        instructions: () => dynamicContext.context,
+        instructions: () => dynamicInstructions,
         mcpServers: [googleSheetsMCP],
         tools: [
             addCalendarEvent,
             getCalendarEvents,
             getCurrentDateTime,
+            // Safe context exposure tool (tenantId and masked appAuthToken)
+            getContext,
+            // Secure encrypted token provider for MCP usage
+            getEncryptedToken,
         ],
         modelSettings: {toolChoice: "auto"},
     });
@@ -58,99 +60,67 @@ export async function POST(req: NextRequest) {
 
     await googleSheetsMCP.connect();
 
-    const encoder = new TextEncoder();
+    // no streaming encoder needed; we return JSON with final message
+    const cookieStore = await cookies();
+    const appAuthToken = cookieStore.get("session_token")?.value;
+
+    // Surface only SAFE context to the model (never expose tokens)
+    if (userTenantId) {
+        // Provide tenantId as a system message so the assistant can answer questions about it
+        thread.push({
+            role: "system",
+            content: `For this session, the user's current tenant ID is: ${userTenantId} & the appAuthToken is: ${appAuthToken}.`,
+        });
+    }
 
     let agentStream = await run(agent, thread, {
+        context: {
+            appAuthToken,
+            tenantId: userTenantId,
+        },
         stream: true,
     });
 
-    const stream = new ReadableStream({
-        async start(controller) {
-            try {
-                while (true) {
-                    // Stream incremental text to client
-                    const textStream = agentStream.toTextStream({
-                        compatibleWithNodeStreams: false,
-                    });
+    try {
+        // Collect the full text internally and return once complete
+        const textStream = agentStream.toTextStream({
+            compatibleWithNodeStreams: false,
+        });
 
-                    for await (const chunk of textStream) {
-                        controller.enqueue(encoder.encode(chunk));
-                    }
+        let finalText = "";
+        for await (const chunk of textStream) {
+            finalText += chunk;
+        }
 
-                    await agentStream.completed;
-                    thread = agentStream.history;
+        await agentStream.completed;
+        thread = agentStream.history;
 
-                    // Check for interruptions (human approval required)
-                    if (agentStream.interruptions?.length) {
-                        controller.enqueue(
-                            encoder.encode(
-                                "\n[INTERRUPTION] Approval required for tool calls\n"
-                            )
-                        );
-                        break; // Optionally end the stream OR handle approval here
-                    } else {
-                        break; // No interruptions → exit loop
-                    }
-                }
+        // If there were interruptions, you could surface that in JSON as well
+        const hasInterruptions = Boolean(
+            agentStream.interruptions?.length
+        );
 
-                controller.close();
-            } catch (err) {
-                controller.error(err);
-            } finally {
-                googleSheetsMCP.close();
+        return new Response(
+            JSON.stringify({
+                message: finalText,
+                interrupted: hasInterruptions,
+            }),
+            {
+                headers: {"Content-Type": "application/json"},
             }
-        },
-    });
-
-    return new Response(stream, {
-        headers: {
-            "Content-Type": "text/plain; charset=utf-8",
-            "Cache-Control": "no-cache",
-            Connection: "keep-alive",
-            "Transfer-Encoding": "chunked",
-        },
-    });
+        );
+    } catch (err) {
+        return new Response(
+            JSON.stringify({
+                message: "",
+                error: (err as Error)?.message || "Agent run failed",
+            }),
+            {
+                status: 500,
+                headers: {"Content-Type": "application/json"},
+            }
+        );
+    } finally {
+        googleSheetsMCP.close();
+    }
 }
-
-// for await (const event of agentStream) {
-//                 if (event.type === "run_item_stream_event") {
-//                     const item: RunItem = event.item;
-//                     let messagePayload = null;
-
-//                     if (item.type === TOOL_CALL_ITEM) {
-//                         messagePayload = {
-//                             type: "thought",
-//                             message: "Calling a Tool...",
-//                         };
-//                     } else if (item.type === TOOL_CALL_OUTPUT_ITEM) {
-//                         messagePayload = {
-//                             type: "thought",
-//                             message:
-//                                 "Retrieving Result from the Tool...",
-//                         };
-//                     } else if (item.type === MESSAGE_OUTPUT_ITEM) {
-//                         const contentItem = item.rawItem.content[0];
-//                         let outputText = "";
-//                         if (contentItem?.type === "output_text") {
-//                             outputText = contentItem.text;
-//                             console.log("Output Text: ", outputText);
-//                         } else if (contentItem?.type === "refusal") {
-//                             outputText = contentItem.refusal;
-//                         }
-//                         messagePayload = {
-//                             type: "final",
-//                             message: outputText,
-//                         };
-//                     }
-
-//                     if (messagePayload) {
-//                         controller.enqueue(
-//                             encoder.encode(
-//                                 `data: ${JSON.stringify(
-//                                     messagePayload
-//                                 )}\n\n`
-//                             )
-//                         );
-//                     }
-//                 }
-//             }

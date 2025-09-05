@@ -1,10 +1,8 @@
 import {NextResponse} from "next/server";
 import OpenAI from "openai";
-import {Readable} from "stream";
-import {writeFile} from "fs/promises";
-import fs from "fs";
-import path from "path";
-import os from "os";
+// Removed filesystem usage to avoid disk I/O and speed up request handling
+
+export const runtime = 'edge';
 
 const openai = new OpenAI({apiKey: process.env.OPENAI_API_KEY!});
 
@@ -20,19 +18,19 @@ export async function POST(req: Request) {
             );
         }
 
-        // Convert File to Buffer
+        // Convert to a Web File compatible with OpenAI SDK (avoid disk I/O)
         const arrayBuffer = await file.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
+        const webFile = new File([arrayBuffer], file.name || "audio.webm", {
+            type: file.type || "audio/webm",
+        });
 
-        // Save to a temporary file (required by OpenAI SDK)
-        const tempFilePath = path.join(os.tmpdir(), file.name);
-        await writeFile(tempFilePath, buffer);
-
-        const transcription =
-            await openai.audio.transcriptions.create({
-                file: fs.createReadStream(tempFilePath),
-                model: "whisper-1",
-            });
+        // Whisper-1 is robust; set low temperature for deterministic output.
+        // If you have access, consider "gpt-4o-mini-transcribe" for even lower latency.
+        const transcription = await openai.audio.transcriptions.create({
+            file: webFile as any,
+            model: "whisper-1",
+            temperature: 0,
+        } as any);
 
         return NextResponse.json({text: transcription.text});
     } catch (error) {

@@ -38,7 +38,7 @@ export function VoiceSelect({
 
   return (
     <Select value={selectedVoice} onValueChange={handleVoiceChange}>
-      <SelectTrigger >
+      <SelectTrigger>
         <SelectValue placeholder="Select a voice" />
       </SelectTrigger>
       <SelectContent>

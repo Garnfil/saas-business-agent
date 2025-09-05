@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+
 import { useParams, useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -9,10 +10,18 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent } from "@/components/ui/tabs"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { Icons } from "@/components/icons"
 import { useToast } from "@/hooks/use-toast"
+import { Check, Plus, Trash2, AlertCircle, Loader2 } from "lucide-react"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import * as z from "zod"
+import { createDataSource, testDataSourceConnection, updateDataSource, saveDataSourceConfig } from "@/lib/actions/data-source"
+import { ApiResponse } from "@/types"
+import { useGoogleAuth } from "@/hooks/useGoogleAuth"
+import { TokenManager } from "@/lib/utils/tokenManager"
 
 interface DataSourceConfig {
   id: string
@@ -56,9 +65,7 @@ const dataSourceConfigs: Record<string, DataSourceConfig> = {
     icon: "📊",
     description: "Connect to Google Sheets spreadsheets for data analysis and reporting",
     steps: [
-      { id: "auth", title: "Authentication", description: "Connect your Google account", completed: false },
       { id: "source", title: "Source Configuration", description: "Configure spreadsheet settings", completed: false },
-      { id: "streams", title: "Select Streams", description: "Choose data to sync", completed: false },
       { id: "test", title: "Test Connection", description: "Verify the connection works", completed: false },
     ],
     fields: [
@@ -252,7 +259,31 @@ export default function DataSourceConfigurePage() {
   const [currentStep, setCurrentStep] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
-  const [formData, setFormData] = useState<Record<string, string>>({})
+  interface SpreadsheetEntry {
+    id: string
+    url: string
+    category: string
+  }
+
+  const {
+    isAuthenticated,
+    isLoading: isAuthLoading,
+    error: authError,
+    tokenData,
+    getValidToken,
+    refreshAccessToken,
+    clearAuth
+  } = useGoogleAuth();
+
+  const [formData, setFormData] = useState<Record<string, any>>({
+    spreadsheets: [{ id: crypto.randomUUID(), url: '', category: 'invoices' }],
+    auth_method: 'OAuth2',
+    oauthStatus: isAuthenticated ? 'authenticated' : 'not_authenticated',
+    serviceAccountJson: '',
+    accessToken: '',
+    refreshToken: '',
+    expiresAt: null
+  })
   const [connectionStatus, setConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle")
   const [showSetupGuide, setShowSetupGuide] = useState(true)
 
@@ -269,8 +300,48 @@ export default function DataSourceConfigurePage() {
     return <div>Loading...</div>
   }
 
-  const handleInputChange = (fieldId: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [fieldId]: value }))
+  interface SpreadsheetItem {
+    url: string;
+    category: string;
+  }
+
+  /**
+ * Extracts the spreadsheet ID from a Google Sheets URL
+ * @param url The Google Sheets URL
+ * @returns The spreadsheet ID or null if not found
+ */
+  function extractSpreadsheetId(url: string): string | null {
+    const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    return match ? match[1] : null;
+  }
+
+  const handleInputChange = (fieldId: string, value: string, index?: number) => {
+    if (fieldId === 'spreadsheet_url' && typeof index === 'number') {
+      // Extract spreadsheet ID if it's a Google Sheets URL
+      const spreadsheetId = extractSpreadsheetId(value);
+      const displayValue = spreadsheetId ? `https://docs.google.com/spreadsheets/d/${spreadsheetId}` : value;
+
+      setFormData(prev => ({
+        ...prev,
+        spreadsheets: prev.spreadsheets.map((item: SpreadsheetItem, i: number) =>
+          i === index ? { ...item, url: displayValue, id: spreadsheetId } : item
+        )
+      }))
+    } else if (fieldId === 'spreadsheet_category' && typeof index === 'number') {
+      setFormData(prev => ({
+        ...prev,
+        spreadsheets: prev.spreadsheets.map((item: SpreadsheetItem, i: number) =>
+          i === index ? { ...item, category: value } : item
+        )
+      }))
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [fieldId]: value,
+        // Reset auth specific fields when auth method changes
+        ...(fieldId === 'auth_method' ? { serviceAccountJson: '', accessToken: '' } : {})
+      }))
+    }
   }
 
   const handleNextStep = () => {
@@ -285,7 +356,318 @@ export default function DataSourceConfigurePage() {
     }
   }
 
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      // Verify the message is from our domain
+      if (event.origin !== window.location.origin) return;
+
+      if (event.data.type === 'OAUTH_SUCCESS') {
+        const { access_token, refresh_token } = event.data;
+
+        console.log(access_token, refresh_token)
+
+        // Update form state with the token
+        setFormData(prev => ({
+          ...prev,
+          accessToken: access_token,
+          oauthStatus: 'authenticated',
+          refreshToken: refresh_token || '',
+        }));
+
+        toast({
+          title: 'Success',
+          description: 'Successfully connected to Google account',
+          variant: 'default',
+        });
+
+        // Log the token to console as requested
+      } else if (event.data.type === 'OAUTH_ERROR') {
+        console.error('OAuth error:', event.data.error);
+        toast({
+          title: 'Error',
+          description: event.data.error || 'Failed to authenticate with Google',
+          variant: 'destructive',
+        });
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  // Handle saving data source with token management
+  const handleSaveDataSource = async () => {
+    try {
+      setIsLoading(true);
+
+      // Get a valid token if using OAuth
+      let accessToken = null;
+      if (formData.auth_method === 'OAuth2' && isAuthenticated) {
+        accessToken = await getValidToken();
+        if (!accessToken) {
+          throw new Error('Failed to get valid access token');
+        }
+      }
+
+      // Prepare config data for the server action
+      const authMethod = formData.auth_method;
+      const configData: any = {
+        name: formData.source_name || 'Google Sheets',
+        type: 'google-sheets',
+        authMethod: authMethod,
+        spreadsheets: formData.spreadsheets,
+      };
+
+      if (authMethod === 'OAuth2') {
+        configData.oauth = {
+          accessToken: formData.accessToken,
+          refreshToken: formData.refreshToken,
+        };
+      } else if (authMethod === 'Service Account' && formData.serviceAccountJson) {
+        configData.serviceAccount = formData.serviceAccountJson;
+      }
+
+      // Use the server action to save the data source
+      const result = await saveDataSourceConfig(configData);
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to save data source');
+      }
+
+      toast({
+        title: 'Success',
+        description: 'Data source saved successfully',
+        variant: 'default',
+      });
+
+      // Redirect to data sources list
+      router.push('/dashboard/data-sources');
+    } catch (error) {
+      console.error('Error saving data source:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to save data source',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = () => {
+    try {
+      // Generate a random state parameter for CSRF protection
+      const state = Math.random().toString(36).substring(2);
+      // Store state in localStorage to verify on callback
+      localStorage.setItem('oauth_state', state);
+
+      // Define the OAuth parameters
+      const params = new URLSearchParams({
+        client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '',
+        redirect_uri: `${window.location.origin}/api/auth/callback/google`,
+        response_type: 'code',
+        scope: [
+          'https://www.googleapis.com/auth/spreadsheets',
+          'https://www.googleapis.com/auth/drive',
+          'https://www.googleapis.com/auth/gmail.readonly',
+        ].join(' '),
+        access_type: 'offline',
+        prompt: 'consent',
+        state: state,
+      });
+
+      // Calculate popup position (center of the screen)
+      const width = 500;
+      const height = 600;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+
+      // Open popup window
+      const popup = window.open(
+        `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`,
+        'googleOAuth',
+        `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=1`
+      );
+
+      if (!popup) {
+        throw new Error('Popup blocked. Please allow popups for this site.');
+      }
+
+      // Check if popup is closed
+      const checkPopup = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(checkPopup);
+          const accessToken = localStorage.getItem('google_access_token');
+          const refreshToken = localStorage.getItem('google_refresh_token');
+          if (accessToken) {
+            // Update the UI to show successful authentication
+            // const tokens = TokenManager.getTokens();
+            setFormData(prev => ({
+              ...prev,
+              oauthStatus: 'authenticated',
+              accessToken: accessToken,
+              refreshToken: refreshToken,
+            }));
+            toast({
+              title: 'Success',
+              description: 'Successfully connected to Google account',
+              variant: 'default',
+            });
+          }
+        }
+      }, 500);
+
+      // Clean up interval if component unmounts
+      return () => clearInterval(checkPopup);
+
+    } catch (error) {
+      console.error('Error initializing Google OAuth:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to initialize Google OAuth',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Update auth status when authentication state changes
+  useEffect(() => {
+    if (isAuthenticated) {
+      setFormData(prev => ({
+        ...prev,
+        oauthStatus: 'authenticated',
+        accessToken: tokenData.accessToken,
+        refreshToken: tokenData.refreshToken,
+        expiresAt: tokenData.expiresAt
+      }));
+
+    } else if (authError) {
+      setFormData(prev => ({
+        ...prev,
+        oauthStatus: 'error'
+      }));
+    }
+  }, [isAuthenticated, authError, tokenData]);
+
+  // Handle OAuth callback when component mounts
+  useEffect(() => {
+    const handleOAuthCallback = async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
+      const state = urlParams.get('state');
+      const storedState = localStorage.getItem('oauth_state');
+      const error = urlParams.get('error');
+
+      if (error) {
+        toast({
+          title: 'Authentication Error',
+          description: error,
+          variant: 'destructive',
+        });
+        window.history.replaceState({}, document.title, window.location.pathname);
+        return;
+      }
+
+      if (code && state && state === storedState) {
+        try {
+          setIsLoading(true);
+
+          // Exchange authorization code for tokens
+          const response = await fetch('/api/auth/token', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ code }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || 'Failed to exchange code for tokens');
+          }
+
+          const data = await response.json();
+
+          // Save tokens using TokenManager
+          await TokenManager.saveTokens({
+            accessToken: data.access_token,
+            refreshToken: data.refresh_token || data.refreshToken,
+            expiresIn: data.expires_in || data.expiresIn,
+          });
+
+          // Clear the URL parameters
+          window.history.replaceState({}, document.title, window.location.pathname);
+
+          // Refresh the auth state
+          await refreshAccessToken();
+
+        } catch (error) {
+          console.error('Error handling OAuth callback:', error);
+          clearAuth();
+          toast({
+            title: 'Error',
+            description: error instanceof Error ? error.message : 'Failed to complete OAuth authentication',
+            variant: 'destructive',
+          });
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    handleOAuthCallback();
+  }, [refreshAccessToken, clearAuth]);
+
+  const addSpreadsheet = () => {
+    setFormData(prev => ({
+      ...prev,
+      spreadsheets: [
+        ...prev.spreadsheets,
+        { id: crypto.randomUUID(), url: '', category: 'invoices' }
+      ]
+    }))
+  }
+
+  const removeSpreadsheet = (index: number) => {
+    if (formData.spreadsheets.length <= 1) return
+
+    setFormData(prev => ({
+      ...prev,
+      spreadsheets: prev.spreadsheets.filter((_item: SpreadsheetItem, i: number) => i !== index)
+    }))
+  }
+
+  const categoryOptions = [
+    'invoices',
+    'clients',
+    'projects',
+    'tasks',
+    'employees',
+    'marketing',
+    'sales'
+  ]
+
   const handleTestConnection = async () => {
+    // Validate at least one spreadsheet URL is provided
+    if (formData.spreadsheets.some((sheet: any) => !sheet.url)) {
+      toast({
+        title: "Validation Error",
+        description: "Please provide a URL for all spreadsheets",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (config.id === 'google-sheets' && formData.auth_method === 'OAuth2' && !formData.accessToken) {
+      console.log(formData);
+      toast({
+        title: "Authentication required",
+        description: "Please sign in with Google first.",
+        variant: "destructive",
+      })
+      return
+    }
+
     setConnectionStatus("testing")
     setIsLoading(true)
 
@@ -302,21 +684,25 @@ export default function DataSourceConfigurePage() {
           : "Please check your configuration and try again.",
         variant: success ? "default" : "destructive",
       })
-    }, 3000)
+    }, 2000)
   }
 
   const handleSaveConnection = async () => {
     setIsConnecting(true)
 
-    // Simulate saving connection
-    setTimeout(() => {
-      setIsConnecting(false)
+    try {
+      // Use the same logic as handleSaveDataSource
+      await handleSaveDataSource()
+    } catch (error) {
+      console.error('Error saving connection:', error)
       toast({
-        title: "Data source connected!",
-        description: `${config.name} has been successfully connected to your account.`,
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to save connection',
+        variant: 'destructive',
       })
-      router.push("/dashboard/data-sources")
-    }, 2000)
+    } finally {
+      setIsConnecting(false)
+    }
   }
 
   const progress = ((currentStep + 1) / config.steps.length) * 100
@@ -331,7 +717,7 @@ export default function DataSourceConfigurePage() {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>{config.steps[currentStep].title}</CardTitle>
-                <CardDescription>{config.steps[currentStep].description}</CardDescription>
+                <CardDescription className="mt-2">{config.steps[currentStep].description}</CardDescription>
               </div>
               <Button
                 variant="outline"
@@ -356,22 +742,6 @@ export default function DataSourceConfigurePage() {
           <CardContent>
             {/* Existing TabsContent sections remain the same */}
             <Tabs value={config.steps[currentStep].id} className="w-full">
-              <TabsContent value="auth" className="space-y-4">
-                <div className="text-center py-8">
-                  <div className="w-16 h-16 bg-gradient-to-r from-green-400 to-blue-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Icons.shield className="w-8 h-8 text-white" />
-                  </div>
-                  <h3 className="text-lg font-semibold mb-2">Secure Authentication</h3>
-                  <p className="text-slate-600 dark:text-slate-400 mb-6">
-                    Connect securely to {config.name} using OAuth 2.0 authentication
-                  </p>
-                  <Button size="lg" className="bg-blue-600 hover:bg-blue-700">
-                    <Icons.externalLink className="w-4 h-4 mr-2" />
-                    Authenticate with {config.name}
-                  </Button>
-                </div>
-              </TabsContent>
-
               <TabsContent value="source" className="space-y-4">
                 <div className="grid gap-4">
                   {config.fields.map((field) => (
@@ -380,7 +750,64 @@ export default function DataSourceConfigurePage() {
                         {field.label}
                         {field.required && <span className="text-red-500 ml-1">*</span>}
                       </Label>
-                      {field.type === "select" ? (
+                      {field.id === 'spreadsheet_url' ? (
+                        <div className="space-y-4">
+                          {formData.spreadsheets?.map((sheet: SpreadsheetItem, index: number) => (
+                            <div key={index} className="flex items-start gap-2">
+                              <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="md:col-span-2">
+                                  <Input
+                                    type="text"
+                                    placeholder="https://docs.google.com/spreadsheets/d/..."
+                                    value={sheet.url}
+                                    onChange={(e) => handleInputChange('spreadsheet_url', e.target.value, index)}
+                                    required
+                                    className="w-full"
+                                  />
+                                </div>
+                                <div className="md:col-span-1">
+                                  <Select
+                                    value={sheet.category}
+                                    onValueChange={(value) => handleInputChange('spreadsheet_category', value, index)}
+                                  >
+                                    <SelectTrigger className="w-full">
+                                      <SelectValue placeholder="Select category" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {categoryOptions.map((option) => (
+                                        <SelectItem key={option} value={option}>
+                                          {option.charAt(0).toUpperCase() + option.slice(1)}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </div>
+                              {formData.spreadsheets.length > 1 && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="mt-1 text-destructive hover:text-destructive"
+                                  onClick={() => removeSpreadsheet(index)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="mt-2"
+                            onClick={addSpreadsheet}
+                          >
+                            <Plus className="h-4 w-4 mr-2" />
+                            Add Another Spreadsheet
+                          </Button>
+                        </div>
+                      ) : field.type === "select" ? (
                         <Select onValueChange={(value) => handleInputChange(field.id, value)}>
                           <SelectTrigger>
                             <SelectValue placeholder={`Select ${field.label.toLowerCase()}`} />
@@ -412,30 +839,55 @@ export default function DataSourceConfigurePage() {
                         />
                       )}
                       {field.description && <p className="text-xs text-slate-500">{field.description}</p>}
+
+                      {/* Google Sheets Authentication Specific Fields */}
+                      {config.id === 'google-sheets' && field.id === 'auth_method' && (
+                        <div className="mt-4 space-y-4">
+                          {formData.auth_method === 'OAuth2' ? (
+                            <div className="space-y-2">
+                              <Button
+                                type="button"
+                                variant={formData.accessToken ? 'outline' : 'default'}
+                                className="w-full flex items-center gap-2"
+                                onClick={handleGoogleSignIn}
+                                disabled={!!formData.accessToken}
+                              >
+                                {formData.accessToken ? (
+                                  <>
+                                    <Check className="h-4 w-4 text-green-500" />
+                                    Connected to Google
+                                  </>
+                                ) : (
+                                  <>
+                                    {/* <Google className="h-4 w-4" /> */}
+                                    Sign in with Google
+                                  </>
+                                )}
+                              </Button>
+                              {formData.accessToken && (
+                                <p className="text-xs text-green-600">Google account connected successfully</p>
+                              )}
+                            </div>
+                          ) : formData.auth_method === 'Service Account' ? (
+                            <div className="space-y-2">
+                              <Label htmlFor="serviceAccountJson">Service Account JSON</Label>
+                              <Textarea
+                                id="serviceAccountJson"
+                                placeholder="Paste your service account JSON key here"
+                                value={formData.serviceAccountJson || ''}
+                                onChange={(e) => handleInputChange('serviceAccountJson', e.target.value)}
+                                rows={8}
+                                className="font-mono text-xs"
+                              />
+                              <p className="text-xs text-slate-500">
+                                Create a service account in Google Cloud Console and paste the JSON key here.
+                              </p>
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
                     </div>
                   ))}
-                </div>
-              </TabsContent>
-
-              <TabsContent value="streams" className="space-y-4">
-                <div className="space-y-4">
-                  <p className="text-sm text-slate-600 dark:text-slate-400">
-                    Select the data streams you want to sync from {config.name}
-                  </p>
-                  <div className="grid gap-3">
-                    {["Users", "Sessions", "Page Views", "Events", "Conversions"].map((stream) => (
-                      <div key={stream} className="flex items-center justify-between p-3 border rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <input type="checkbox" defaultChecked className="rounded" />
-                          <div>
-                            <p className="font-medium">{stream}</p>
-                            <p className="text-xs text-slate-500">Sync {stream.toLowerCase()} data</p>
-                          </div>
-                        </div>
-                        <Badge variant="outline">Recommended</Badge>
-                      </div>
-                    ))}
-                  </div>
                 </div>
               </TabsContent>
 

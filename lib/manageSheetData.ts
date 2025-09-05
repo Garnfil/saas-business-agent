@@ -3,7 +3,6 @@ import {tool} from "@openai/agents";
 import {z} from "zod";
 import {GoogleSpreadsheet} from "google-spreadsheet";
 import {JWT} from "google-auth-library";
-import creds from "../config/avian-cable-456907-n4-09a10a17fdf4.json";
 import {googleSheets} from "./data/sheets";
 
 const googlePrivateKey = process.env.GOOGLE_PRIVATE_KEY;

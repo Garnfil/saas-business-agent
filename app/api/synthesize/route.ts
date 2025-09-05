@@ -1,6 +1,8 @@
 import {NextResponse} from "next/server";
 import OpenAI from "openai";
 
+export const runtime = "edge";
+
 const openai = new OpenAI({apiKey: process.env.OPENAI_API_KEY!});
 
 export async function POST(req: Request) {
@@ -36,17 +38,16 @@ export async function POST(req: Request) {
             );
         }
 
+        // Create speech. The OpenAI SDK returns a fetch Response-like object with a readable body.
         const speech = await openai.audio.speech.create({
             model: "tts-1",
-            voice: voice as any, // Type assertion to satisfy OpenAI's type checking
+            voice: voice as any,
             input: text,
-            instructions: "Speak in a cheerful and positive tone.",
             response_format: "mp3",
         });
 
-        const audioBuffer = Buffer.from(await speech.arrayBuffer());
-
-        return new Response(audioBuffer, {
+        // Stream directly without fully buffering to reduce TTFB.
+        return new Response(speech.body as any, {
             headers: {
                 "Content-Type": "audio/mpeg",
                 "Content-Disposition":

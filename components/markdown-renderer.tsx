@@ -77,7 +77,7 @@ export default function MarkdownRenderer({
           <ol
             style={{
               paddingLeft: "1.5em",
-              margin: "2em 0",
+              margin: "1em 0",
               listStyleType: "decimal",
             }}
             {...props}
