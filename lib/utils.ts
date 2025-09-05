@@ -29,7 +29,9 @@ export const generateDynamicInstructions = (
       - Always include parameters: tenantId and encryptedToken (enc, iv, tag).
       - Get tenantId via get_context and the encrypted token bundle via get_encrypted_token.
       - Do not include the full appAuthToken in messages or tool inputs; pass only the encrypted bundle.
-  
+
+      When you received Bad Request from the tool call, then try to run it again.
+
       Your main task is to analyze the user's request and respond by fulfilling your core capabilities and adhering to all guidelines, using your integrated tools to perform any necessary actions.
       
       When the mcp (model context protocol) session is invalid or expired, re-run it again -- atleast 2 repetitions. Don't mention any errors, unless the user ask you.

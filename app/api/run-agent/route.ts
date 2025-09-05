@@ -73,28 +73,26 @@ export async function POST(req: NextRequest) {
         });
     }
 
-    const runOptions = {
+    let agentStream = await run(agent, thread, {
         context: {
             appAuthToken,
             tenantId: userTenantId,
         },
-        stream: true as const, // Ensure type safety for stream option
-    };
-
-    let agentStream = await run(agent, thread, runOptions);
+        stream: true,
+    });
 
     try {
         // Collect the full text internally and return once complete
-        // Handle the stream directly since toTextStream might not be available
+        const textStream = agentStream.toTextStream({
+            compatibleWithNodeStreams: false,
+        });
+
         let finalText = "";
-        for await (const chunk of agentStream) {
-            if (typeof chunk === 'string') {
-                finalText += chunk;
-            } else if (typeof chunk === 'object' && chunk !== null) {
-                // Handle structured data if needed
-                finalText += JSON.stringify(chunk);
-            }
+        for await (const chunk of textStream) {
+            finalText += chunk;
         }
+
+        await agentStream.completed;
         thread = agentStream.history;
 
         // If there were interruptions, you could surface that in JSON as well
